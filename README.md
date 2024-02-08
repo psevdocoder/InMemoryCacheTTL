@@ -21,7 +21,7 @@ import (
 )
 
 func main() {
-	c := cache.New()
+	c := cache.New(time.Second * 5)
 
 	// Добавляем значение в кэш с TTL
 	c.Set("key1", "value1", 4*time.Second)
