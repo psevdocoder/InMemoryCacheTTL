@@ -1,48 +1,44 @@
 package CacheTTL
 
 import (
-	"fmt"
 	"sync"
 	"time"
 )
 
-type value struct {
-	value interface{}
-	ttl   *time.Time
+type storeField struct {
+	value    interface{}
+	deleteAt *time.Time
 }
 
 type Cache struct {
 	data sync.Map
 }
 
-func New() *Cache {
+func New(searchExpiredInterval time.Duration) *Cache {
 	cache := &Cache{
 		data: sync.Map{},
 	}
-
-	go cache.backgroundCacheCleaner()
+	go cache.backgroundCacheCleaner(searchExpiredInterval)
 	return cache
 }
 
-// background goroutine to clean up expired keys in the Cache
-func (c *Cache) backgroundCacheCleaner() {
+func (c *Cache) backgroundCacheCleaner(searchExpiredInterval time.Duration) {
 	for {
-		<-time.Tick(time.Second * 1)
-		fmt.Println("Searching for expired keys")
+		<-time.Tick(searchExpiredInterval)
 		c.data.Range(
 			func(key, v interface{}) bool {
-				vv, ok := v.(*value)
+				vv, ok := v.(*storeField)
 				if !ok {
 					return true
 				}
 
-				if vv.ttl == nil {
+				// Если TTL не задан, то пропускаем
+				if vv.deleteAt == nil {
 					return true
 				}
 
-				if time.Now().After(*vv.ttl) {
+				if time.Now().After(*vv.deleteAt) {
 					c.data.Delete(key)
-					fmt.Println("Deleting expired record with key:", key)
 				}
 				return true
 			})
@@ -50,8 +46,8 @@ func (c *Cache) backgroundCacheCleaner() {
 }
 
 func (c *Cache) Set(key string, val interface{}, ttl time.Duration) {
-	t := time.Now().Add(ttl)
-	c.data.Store(key, &value{val, &t})
+	deleteAt := time.Now().Add(ttl)
+	c.data.Store(key, &storeField{val, &deleteAt})
 }
 
 func (c *Cache) Get(key string) (result interface{}, ok bool) {
@@ -60,7 +56,7 @@ func (c *Cache) Get(key string) (result interface{}, ok bool) {
 		return nil, false
 	}
 
-	vv, ok := load.(*value)
+	vv, ok := load.(*storeField)
 	if !ok {
 		return nil, false
 	}
